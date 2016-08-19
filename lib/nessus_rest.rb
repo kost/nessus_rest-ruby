@@ -27,8 +27,10 @@
 #   n.report_download_file(scanid,'csv','myscanreport.csv')
 #
 
+require 'openssl'
 require 'uri'
 require 'net/http'
+require 'net/https'
 require 'json'
 
 # NessusREST module - for all stuff regarding Nessus REST JSON
