@@ -1,7 +1,5 @@
 [![Build Status](https://travis-ci.org/kost/nessus_rest-ruby.png)](https://travis-ci.org/kost/nessus_rest-ruby)
 [![Coverage Status](https://coveralls.io/repos/kost/nessus_rest-ruby/badge.png?branch=master)](https://coveralls.io/r/kost/nessus_rest-ruby?branch=master)
-[![Total Downloads](https://poser.pugx.org/kost/nessus_rest-ruby/d/total.png)](https://packagist.org/packages/kost/nessus_rest-ruby)
-[![Latest Stable Version](https://poser.pugx.org/kost/nessus_rest-ruby/v/stable.png)](https://packagist.org/packages/kost/nessus_rest-ruby)
 
 # nessus_rest
 
