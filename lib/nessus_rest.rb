@@ -122,10 +122,29 @@ module NessusREST
     def authenticate(username, password)
       @username = username
       @password = password
+      authdefault
+    end
+    alias_method :login, :authenticate
+
+    # Tries to authenticate to the Nessus REST JSON interface
+    #
+    # returns: true if logged in, false if not
+    #
+    # Usage:
+    #
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :autologin=>false, 
+    #     :username=>'nessususer', :password=>'nessuspassword')
+    #  if n.authdefault
+    #	puts "Logged in"
+    #  else
+    #	puts "Error"
+    #  end
+    def authdefault
       payload = {
-        :username => @username, 
-        :password => @password, 
-        :json => 1
+        :username => @username,
+        :password => @password,
+        :json => 1,
+        :authenticationmethod => true
       }
       res = http_post(:uri=>"/session", :data=>payload)
       if res['token']
@@ -136,7 +155,6 @@ module NessusREST
         false
       end
     end
-    alias_method :login, :authenticate
 
     # checks if we're logged in correctly
     #
@@ -586,6 +604,17 @@ module NessusREST
     #  res = n.http_put(:uri=>"/users/#{user_id}/chpasswd", :data=>payload, :fields=>n.x_cookie)
     #  puts res.code 
     def http_put(opts={})
+      ret=http_put_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+	authdefault
+	ret=http_put_low(opts)
+	return ret
+      else
+	return ret
+      end
+    end
+
+    def http_put_low(opts={})
       uri    = opts[:uri]
       data   = opts[:data]
       fields = opts[:fields] || {}
@@ -625,6 +654,17 @@ module NessusREST
     #  res = n.http_delete(:uri=>"/session", :fields=>n.x_cookie)
     #  puts res.code
     def http_delete(opts={})
+      ret=http_delete_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+	authdefault
+	ret=http_delete_low(opts)
+	return ret
+      else
+	return ret
+      end
+    end
+
+    def http_delete_low(opts={})
       uri    = opts[:uri]
       fields = opts[:fields] || {}
       res    = nil
@@ -662,6 +702,22 @@ module NessusREST
     #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
     #  pp n.http_get(:uri=>"/users", :fields=>n.x_cookie)
     def http_get(opts={})
+      raw_content = opts[:raw_content] || false
+      ret=http_get_low(opts)
+      if !raw_content then
+	if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+          authdefault
+          ret=http_get_low(opts)
+          return ret
+        else
+          return ret
+	end
+      else
+	return ret
+      end
+    end
+
+    def http_get_low(opts={})
       uri    = opts[:uri]
       fields = opts[:fields] || {}
       raw_content = opts[:raw_content] || false
@@ -702,6 +758,24 @@ module NessusREST
     #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
     #  pp n.http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>n.x_cookie)
     def http_post(opts={})
+      if opts.has_key?(:authenticationmethod) then
+        # i know authzmethod = opts.delete(:authorizationmethod) is short, but not readable
+        authzmethod = opts[:authenticationmethod]
+        opts.delete(:authenticationmethod)
+      end
+      ret=http_post_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+	if not authzmethod
+          authdefault
+	  ret=http_post_low(opts)
+	  return ret
+        end
+      else
+	return ret
+      end
+    end
+
+    def http_post_low(opts={})
       uri    = opts[:uri]
       data   = opts[:data]
       fields = opts[:fields] || {}
