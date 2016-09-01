@@ -536,7 +536,7 @@ module NessusREST
 
     def scan_finished?(scan_id)
       ss=scan_status(scan_id)
-      if ss == 'completed' then
+      if ss == 'completed' or ss == 'canceled' or ss == 'imported' then
         return true
       end
       return false
