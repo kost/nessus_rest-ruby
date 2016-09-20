@@ -7,6 +7,8 @@ n=NessusREST::Client.new({:url=>'https://localhost:8834', :username=>'user', :pa
 formats=["nessus","csv","html"]
 folders_id=Hash.new
 
+sl=n.list_scans
+
 sl["folders"].each do |f|
   folders_id[f['id']]=f['name']
 end
