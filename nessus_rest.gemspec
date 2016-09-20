@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.homepage = 'https://github.com/kost/nessus_rest-ruby'
   spec.license = 'MIT'
   spec.summary = %Q{Communicate with Nessus Scanner (version 6+) over REST/JSON interface}
-  spec.description = %Q{Ruby library for Nessus JSON/REST interface. This library is used for communication with Nessus over REST interface. You can start, stop, pause and resume scan. Watch progress and status of scan, download report, etc. }
+  spec.description = %Q{Ruby library for Nessus (version 6+) JSON/REST interface. This library is used for communication with Nessus over REST interface. You can start, stop, pause and resume scan. Watch progress and status of scan, download report, etc. }
   spec.email = 'vlatko.kosturjak@gmail.com'
   spec.authors = ['Vlatko Kosturjak']
   # spec.version = '0.1.5'
