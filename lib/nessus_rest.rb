@@ -512,16 +512,18 @@ module NessusREST
     #   n.report_download_file(scanid,'nessus','myscanreport.nessus')
     #
     def scan_quick_policy (policyname, name, targets)
-      templates=list_policies['policies'].select do |pol|
-        pol['template_uuid'] == policyname or pol['name'] == policyname
+      policies=list_policies['policies'].select do |pol|
+        pol['id'] == policyname or pol['name'] == policyname
       end
-      if templates.nil? then
+      if policies.nil? then
 	return nil
       end
-      tuuid=templates.first['template_uuid']
+      policy = policies.first
+      tuuid=policy['template_uuid']
       et=Hash.new
       et.merge!(@quick_defaults)
       et['name']=name
+      et['policy_id'] = policy['id']
       et['text_targets']=targets
       sc=scan_create(tuuid,et)
     end
