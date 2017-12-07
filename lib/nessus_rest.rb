@@ -498,6 +498,7 @@ module NessusREST
 
     # Performs scan with scan policy provided (uuid of policy or policy name).
     # Name is your scan name and targets are targets for scan
+    # (foldername is optional - folder where to save the scan (if that folder exists))
     #
     # returns: JSON parsed object with scan info
     #
@@ -511,7 +512,7 @@ module NessusREST
     #   n.scan_wait4finish(scanid)
     #   n.report_download_file(scanid,'nessus','myscanreport.nessus')
     #
-    def scan_quick_policy (policyname, name, targets)
+    def scan_quick_policy (policyname, name, targets, foldername=nil)
       policies=list_policies['policies'].select do |pol|
         pol['id'] == policyname or pol['name'] == policyname
       end
@@ -525,6 +526,14 @@ module NessusREST
       et['name']=name
       et['policy_id'] = policy['id']
       et['text_targets']=targets
+      unless foldername.nil?
+        folders = list_folders['folders'].select do |folder|
+          folder['name'] == foldername
+        end
+        unless folders.empty?
+          et['folder_id'] = folders.first['id']
+        end
+      end
       sc=scan_create(tuuid,et)
     end
 
