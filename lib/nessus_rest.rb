@@ -433,10 +433,7 @@ module NessusREST
     end
 
     def scan_export_status(scan_id, file_id)
-      request = http_get(:uri=>"/scans/#{scan_id}/export/#{file_id}/status", :fields=>header)
-      res = @connection.request(request)
-      res = JSON.parse(res.body)
-      return res
+      http_get(:uri=>"/scans/#{scan_id}/export/#{file_id}/status", :fields=>header)
     end
 
     # delete scan with scan_id
