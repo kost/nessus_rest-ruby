@@ -542,7 +542,10 @@ module NessusREST
 
     def scan_status(scan_id)
       sd=scan_details(scan_id)
-      if not sd['error'].nil?
+      unless sd['error'].nil?
+        return 'error'
+      end
+      if sd.nil?
         return 'error'
       end
       return sd['info']['status']
