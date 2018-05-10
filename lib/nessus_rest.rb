@@ -551,6 +551,22 @@ module NessusREST
       return sd['info']['status']
     end
 
+    def scan_latest_history_status(scan_id)
+      sd=scan_details(scan_id)
+      unless sd['error'].nil?
+        return 'error'
+      end
+      if sd.nil?
+        return 'error'
+      end
+      history = sd['history']
+      if history.nil? or history.length == 0
+        'error'
+      else
+        sd['history'].last['status']
+      end
+    end
+
     def scan_finished?(scan_id)
       ss=scan_status(scan_id)
       if ss == 'completed' or ss == 'canceled' or ss == 'imported' then
