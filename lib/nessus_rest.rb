@@ -452,6 +452,20 @@ module NessusREST
       return false
     end
 
+    def policy_create(template_id, plugins, settings)
+      options = {
+        :uri => "/policies/",
+        :fields => header,
+        :ctype =>'application/json',
+        :body => {
+          :uuid => template_id,
+          :plugins => plugins,
+          :settings => settings
+        }.to_json
+      }
+      http_post(options)
+    end
+
     def policy_delete(policy_id)
       res = http_delete(:uri=>"/policies/#{policy_id}", :fields=>header)
       return res.code
@@ -686,22 +700,22 @@ module NessusREST
     #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  res = n.http_delete(:uri=>"/session", :fields=>n.header)
     #  puts res.code
-    def http_delete(opts={})
-      ret=http_delete_low(opts)
-      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
-	authdefault
-	ret=http_delete_low(opts)
-	return ret
+    def http_delete(opts = {})
+      ret = http_delete_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
+        authdefault
+        ret = http_delete_low(opts)
+        return ret
       else
-	return ret
+        return ret
       end
     end
 
-    def http_delete_low(opts={})
-      uri    = opts[:uri]
+    def http_delete_low(opts = {})
+      uri = opts[:uri]
       fields = opts[:fields] || {}
-      res    = nil
-      tries  = @httpretry
+      res = nil
+      tries = @httpretry
 
       req = Net::HTTP::Delete.new(uri)
 
@@ -710,15 +724,15 @@ module NessusREST
       end
 
       begin
-	tries -= 1
+        tries -= 1
         res = @connection.request(req)
       rescue Timeout::Error, Errno::EINVAL, Errno::ECONNRESET, EOFError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError => e
-	if tries>0
-	  sleep @httpsleep
-	  retry
-	else
-	  return res
-	end
+        if tries > 0
+          sleep @httpsleep
+          retry
+        else
+          return res
+        end
       rescue URI::InvalidURIError
         return res
       end
@@ -734,19 +748,19 @@ module NessusREST
     #
     #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.http_get(:uri=>"/users", :fields=>n.header)
-    def http_get(opts={})
+    def http_get(opts = {})
       raw_content = opts[:raw_content] || false
-      ret=http_get_low(opts)
+      ret = http_get_low(opts)
       if !raw_content then
-	if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+        if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
           authdefault
-          ret=http_get_low(opts)
+          ret = http_get_low(opts)
           return ret
         else
           return ret
-	end
+        end
       else
-	return ret
+        return ret
       end
     end
 
@@ -790,21 +804,21 @@ module NessusREST
     #
     #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>n.header)
-    def http_post(opts={})
+    def http_post(opts = {})
       if opts.has_key?(:authenticationmethod) then
         # i know authzmethod = opts.delete(:authorizationmethod) is short, but not readable
         authzmethod = opts[:authenticationmethod]
         opts.delete(:authenticationmethod)
       end
-      ret=http_post_low(opts)
-      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
-	if not authzmethod
+      ret = http_post_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
+        if not authzmethod
           authdefault
-	  ret=http_post_low(opts)
-	  return ret
+          ret = http_post_low(opts)
+          return ret
         end
       else
-	return ret
+        return ret
       end
     end
 
