@@ -452,6 +452,10 @@ module NessusREST
       return false
     end
 
+    def policy_details(policy_id)
+      http_get(:uri=>"/policies/#{policy_id}", :fields=>header)
+    end
+
     def policy_create(template_id, plugins, settings)
       options = {
         :uri => "/policies/",
@@ -459,11 +463,38 @@ module NessusREST
         :ctype =>'application/json',
         :body => {
           :uuid => template_id,
+          :audits => {},
+          :credentials => {delete: []},
           :plugins => plugins,
           :settings => settings
         }.to_json
       }
       http_post(options)
+    end
+
+    def policy_copy(policy_id)
+      options = {
+        :uri => "/policies/#{policy_id}/copy",
+        :fields => header,
+        :ctype =>'application/json'
+      }
+      http_post(options)
+    end
+
+    def policy_configure(policy_id, template_id, plugins, settings)
+      options = {
+        :uri => "/policies/#{policy_id}",
+        :fields => header,
+        :ctype =>'application/json',
+        :body => {
+          :uuid => template_id,
+          :audits => {},
+          :credentials => {delete: []},
+          :plugins => plugins,
+          :settings => settings
+        }.to_json
+      }
+      http_put(options)
     end
 
     def policy_delete(policy_id)
