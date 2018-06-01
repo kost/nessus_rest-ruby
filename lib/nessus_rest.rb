@@ -20,7 +20,7 @@
 # 
 #   require 'nessus_rest'
 #
-#   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :username=>'user', :password=> 'password'})
+#   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'}})
 #   qs=n.scan_quick_template('basic','name-of-scan','localhost')
 #   scanid=qs['scan']['id']
 #   n.scan_wait4finish(scanid)
@@ -32,6 +32,7 @@ require 'uri'
 require 'net/http'
 require 'net/https'
 require 'json'
+require 'error/authentication_error'
 
 # NessusREST module - for all stuff regarding Nessus REST JSON
 # 
@@ -44,7 +45,9 @@ module NessusREST
   #
   #   require 'nessus_rest'
   #
-  #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :username=>'user', :password=> 'password'})
+  #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'}})
+  #   or to authenticate using API keys
+  #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :credentials => {access_key:: 'access_key', secret_key: 'secret_key'}})
   #   qs=n.scan_quick_template('basic','name-of-scan','localhost')
   #   scanid=qs['scan']['id']
   #   n.scan_wait4finish(scanid)
@@ -53,11 +56,10 @@ module NessusREST
   class Client
     attr_accessor :quick_defaults
     attr_accessor :defsleep, :httpsleep, :httpretry, :ssl_use, :ssl_verify, :autologin
-    attr_reader :x_cookie
+    attr_reader :header
 
     class << self
       @connection
-      @token
     end
 
     # initialize quick scan defaults: these will be used when not specifying defaults
@@ -78,12 +80,11 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     def initialize(params={})
       # defaults
       @nessusurl = params.fetch(:url,'https://127.0.0.1:8834/')
-      @username = params.fetch(:username,'nessus')
-      @password = params.fetch(:password,'nessus')
+      @credentials = params.fetch(:credentials, {username: 'nessus', password: 'nessus'})
       @ssl_verify = params.fetch(:ssl_verify,false)
       @ssl_use = params.fetch(:ssl_use,true)
       @autologin = params.fetch(:autologin, true)
@@ -104,7 +105,7 @@ module NessusREST
       end
         
       yield @connection if block_given?
-        authenticate(@username, @password) if @autologin
+        authenticate if @autologin
     end
  
     # Tries to authenticate to the Nessus REST JSON interface
@@ -119,9 +120,7 @@ module NessusREST
     #  else
     #	puts "Error"
     #  end
-    def authenticate(username, password)
-      @username = username
-      @password = password
+    def authenticate
       authdefault
     end
     alias_method :login, :authenticate
@@ -140,19 +139,27 @@ module NessusREST
     #	puts "Error"
     #  end
     def authdefault
-      payload = {
-        :username => @username,
-        :password => @password,
-        :json => 1,
-        :authenticationmethod => true
-      }
-      res = http_post(:uri=>"/session", :data=>payload)
-      if res['token']
-        @token = "token=#{res['token']}"
-        @x_cookie = {'X-Cookie'=>@token}
-        return true
+      if @credentials[:username] and @credentials[:password]
+        payload = {
+          :username => @credentials[:username],
+          :password => @credentials[:password],
+          :json => 1,
+          :authenticationmethod => true
+        }
+        res = http_post(:uri=>"/session", :data=>payload)
+        if res['token']
+          @token = "token=#{res['token']}"
+          @header = {'X-Cookie'=>@token}
+          return true
+        else
+          false
+        end
+      elsif @credentials[:access_key] and @credentials[:secret_key]
+        @header = {'X-ApiKeys'=>"accessKey=#{@credentials[:access_key]}; secretKey=#{@credentials[:secret_key]}"}
       else
-        false
+        fail NessusREST::Error::AuthenticationError, 'Authentication credentials' \
+        ' not provided. Must provided either username and password or ' \
+        'access key and secret key.'
       end
     end
 
@@ -162,7 +169,7 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  if n.authenticated
     #	puts "Logged in"
     #  else
@@ -182,10 +189,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.get_server_properties
     def get_server_properties
-      http_get(:uri=>"/server/properties", :fields=>x_cookie)
+      http_get(:uri=>"/server/properties", :fields=>header)
     end
     alias_method :server_properties, :get_server_properties
   
@@ -195,7 +202,7 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.user_add('user','password','16','local')
     #
     # Reference:
@@ -208,7 +215,7 @@ module NessusREST
         :type => type, 
         :json => 1
       }
-      http_post(:uri=>"/users", :fields=>x_cookie, :data=>payload)
+      http_post(:uri=>"/users", :fields=>header, :data=>payload)
     end
       
     # delete user with user_id
@@ -217,10 +224,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  puts n.user_delete(1)
     def user_delete(user_id)
-      res = http_delete(:uri=>"/users/#{user_id}", :fields=>x_cookie)
+      res = http_delete(:uri=>"/users/#{user_id}", :fields=>header)
       return res.code
     end
       
@@ -230,14 +237,14 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  puts n.user_chpasswd(1,'newPassword')
     def user_chpasswd(user_id, password)
       payload = {
         :password => password, 
         :json => 1
       }
-      res = http_put(:uri=>"/users/#{user_id}/chpasswd", :data=>payload, :fields=>x_cookie)
+      res = http_put(:uri=>"/users/#{user_id}/chpasswd", :data=>payload, :fields=>header)
       return res.code
     end
       
@@ -247,10 +254,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  puts n.user_logout
     def user_logout
-      res = http_delete(:uri=>"/session", :fields=>x_cookie)
+      res = http_delete(:uri=>"/session", :fields=>header)
       return res.code
     end
     alias_method :logout, :user_logout
@@ -261,10 +268,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_policies
     def list_policies
-      http_get(:uri=>"/policies", :fields=>x_cookie)
+      http_get(:uri=>"/policies", :fields=>header)
     end
 
     # Get List of Users
@@ -273,10 +280,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_users
     def list_users
-      http_get(:uri=>"/users", :fields=>x_cookie)
+      http_get(:uri=>"/users", :fields=>header)
     end
 
     # Get List of Folders
@@ -285,10 +292,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_folders
     def list_folders
-      http_get(:uri=>"/folders", :fields=>x_cookie)
+      http_get(:uri=>"/folders", :fields=>header)
     end
 
     # Get List of Scanners
@@ -297,10 +304,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_scanners
     def list_scanners
-      http_get(:uri=>"/scanners", :fields=>x_cookie)
+      http_get(:uri=>"/scanners", :fields=>header)
     end
 
     # Get List of Families
@@ -309,10 +316,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_families
     def list_families
-      http_get(:uri=>"/plugins/families", :fields=>x_cookie)
+      http_get(:uri=>"/plugins/families", :fields=>header)
     end
 
     # Get List of Plugins
@@ -321,10 +328,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_plugins
     def list_plugins(family_id)
-      http_get(:uri=>"/plugins/families/#{family_id}", :fields=>x_cookie)
+      http_get(:uri=>"/plugins/families/#{family_id}", :fields=>header)
     end
 
     # Get List of Templates
@@ -333,14 +340,14 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.list_templates
     def list_templates(type)
-      res = http_get(:uri=>"/editor/#{type}/templates", :fields=>x_cookie)
+      res = http_get(:uri=>"/editor/#{type}/templates", :fields=>header)
     end
 
     def plugin_details(plugin_id)
-      http_get(:uri=>"/plugins/plugin/#{plugin_id}", :fields=>x_cookie)
+      http_get(:uri=>"/plugins/plugin/#{plugin_id}", :fields=>header)
     end
 
     # check if logged in user is administrator
@@ -349,14 +356,14 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  if n.is_admin
     #	puts "Administrator"
     #  else
     #	puts "NOT administrator"
     #  end
     def is_admin
-      res = http_get(:uri=>"/session", :fields=>x_cookie)
+      res = http_get(:uri=>"/session", :fields=>header)
       if res['permissions'] == 128
         return true
       else
@@ -370,10 +377,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.server_status
     def server_status
-      http_get(:uri=>"/server/status", :fields=>x_cookie)
+      http_get(:uri=>"/server/status", :fields=>header)
     end
 
     def scan_create(uuid, settings)
@@ -382,11 +389,11 @@ module NessusREST
 	:settings => settings,
 	:json => 1
       }.to_json
-      http_post(:uri=>"/scans", :body=>payload, :fields=>x_cookie, :ctype=>'application/json')
+      http_post(:uri=>"/scans", :body=>payload, :fields=>header, :ctype=>'application/json')
     end
 
     def scan_launch(scan_id)
-      http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>x_cookie)
+      http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>header)
     end
 
     # Get List of Scans
@@ -395,42 +402,38 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.scan_list
     def scan_list
-      http_get(:uri=>"/scans", :fields=>x_cookie)
+      http_get(:uri=>"/scans", :fields=>header)
     end
     alias_method :list_scans, :scan_list
 
     def scan_details(scan_id)
-      http_get(:uri=>"/scans/#{scan_id}", :fields=>x_cookie)
+      http_get(:uri=>"/scans/#{scan_id}", :fields=>header)
     end
 
     def scan_pause(scan_id)
-      http_post(:uri=>"/scans/#{scan_id}/pause", :fields=>x_cookie)
+      http_post(:uri=>"/scans/#{scan_id}/pause", :fields=>header)
     end
 
     def scan_resume(scan_id)
-      http_post(:uri=>"/scans/#{scan_id}/resume", :fields=>x_cookie)
+      http_post(:uri=>"/scans/#{scan_id}/resume", :fields=>header)
     end
 
     def scan_stop(scan_id)
-      http_post(:uri=>"/scans/#{scan_id}/stop", :fields=>x_cookie)
+      http_post(:uri=>"/scans/#{scan_id}/stop", :fields=>header)
     end
 
     def scan_export(scan_id, format)
       payload = {
         :format => format
       }.to_json
-      http_post(:uri=>"/scans/#{scan_id}/export", :body=>payload, :ctype=>'application/json', :fields=>x_cookie)
+      http_post(:uri=>"/scans/#{scan_id}/export", :body=>payload, :ctype=>'application/json', :fields=>header)
     end
 
     def scan_export_status(scan_id, file_id)
-      request = Net::HTTP::Get.new("/scans/#{scan_id}/export/#{file_id}/status")
-      request.add_field("X-Cookie", @token)
-      res = @connection.request(request)
-      res = JSON.parse(res.body)
-      return res
+      http_get(:uri=>"/scans/#{scan_id}/export/#{file_id}/status", :fields=>header)
     end
 
     # delete scan with scan_id
@@ -439,18 +442,71 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  puts n.scan_delete(1)
     def scan_delete(scan_id)
-      res = http_delete(:uri=>"/scans/#{scan_id}", :fields=>x_cookie)
+      res = http_delete(:uri=>"/scans/#{scan_id}", :fields=>header)
       if res.code == 200 then
         return true
       end
       return false
     end
 
+    def host_details(scan_id, host_id, history_id: nil)
+      uri = "/scans/#{scan_id}/hosts/#{host_id}"
+      unless history_id.nil?
+        uri += "?history_id=#{history_id}"
+      end
+      http_get(:uri=>uri, :fields=>header)
+    end
+
+    def policy_details(policy_id)
+      http_get(:uri=>"/policies/#{policy_id}", :fields=>header)
+    end
+
+    def policy_create(template_id, plugins, settings)
+      options = {
+        :uri => "/policies/",
+        :fields => header,
+        :ctype =>'application/json',
+        :body => {
+          :uuid => template_id,
+          :audits => {},
+          :credentials => {delete: []},
+          :plugins => plugins,
+          :settings => settings
+        }.to_json
+      }
+      http_post(options)
+    end
+
+    def policy_copy(policy_id)
+      options = {
+        :uri => "/policies/#{policy_id}/copy",
+        :fields => header,
+        :ctype =>'application/json'
+      }
+      http_post(options)
+    end
+
+    def policy_configure(policy_id, template_id, plugins, settings)
+      options = {
+        :uri => "/policies/#{policy_id}",
+        :fields => header,
+        :ctype =>'application/json',
+        :body => {
+          :uuid => template_id,
+          :audits => {},
+          :credentials => {delete: []},
+          :plugins => plugins,
+          :settings => settings
+        }.to_json
+      }
+      http_put(options)
+    end
+
     def policy_delete(policy_id)
-      res = http_delete(:uri=>"/policies/#{policy_id}", :fields=>x_cookie)
+      res = http_delete(:uri=>"/policies/#{policy_id}", :fields=>header)
       return res.code
     end
 
@@ -460,10 +516,10 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.editor_templates('scan',uuid)
     def editor_templates (type, uuid)
-      res = http_get(:uri=>"/editor/#{type}/templates/#{uuid}", :fields=>x_cookie)
+      res = http_get(:uri=>"/editor/#{type}/templates/#{uuid}", :fields=>header)
     end
 
     # Performs scan with templatename provided (name, title or uuid of scan).
@@ -475,7 +531,7 @@ module NessusREST
     #
     #   require 'nessus_rest'
     #
-    #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :username=>'user', :password=> 'password'})
+    #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'}})
     #   qs=n.scan_quick_template('basic','name-of-scan','localhost')
     #   scanid=qs['scan']['id']
     #   n.scan_wait4finish(scanid)
@@ -498,6 +554,7 @@ module NessusREST
 
     # Performs scan with scan policy provided (uuid of policy or policy name).
     # Name is your scan name and targets are targets for scan
+    # (foldername is optional - folder where to save the scan (if that folder exists))
     #
     # returns: JSON parsed object with scan info
     #
@@ -505,13 +562,13 @@ module NessusREST
     #
     #   require 'nessus_rest'
     #
-    #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :username=>'user', :password=> 'password'})
+    #   n=NessusREST::Client.new ({:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'}})
     #   qs=n.scan_quick_policy('myscanpolicy','name-of-scan','localhost')
     #   scanid=qs['scan']['id']
     #   n.scan_wait4finish(scanid)
     #   n.report_download_file(scanid,'nessus','myscanreport.nessus')
     #
-    def scan_quick_policy (policyname, name, targets)
+    def scan_quick_policy (policyname, name, targets, foldername=nil)
       policies=list_policies['policies'].select do |pol|
         pol['id'] == policyname or pol['name'] == policyname
       end
@@ -525,15 +582,42 @@ module NessusREST
       et['name']=name
       et['policy_id'] = policy['id']
       et['text_targets']=targets
+      unless foldername.nil?
+        folders = list_folders['folders'].select do |folder|
+          folder['name'] == foldername
+        end
+        unless folders.empty?
+          et['folder_id'] = folders.first['id']
+        end
+      end
       sc=scan_create(tuuid,et)
     end
 
     def scan_status(scan_id)
       sd=scan_details(scan_id)
-      if not sd['error'].nil?
+      unless sd['error'].nil?
+        return 'error'
+      end
+      if sd.nil?
         return 'error'
       end
       return sd['info']['status']
+    end
+
+    def scan_latest_history_status(scan_id)
+      sd=scan_details(scan_id)
+      unless sd['error'].nil?
+        return 'error'
+      end
+      if sd.nil?
+        return 'error'
+      end
+      history = sd['history']
+      if history.nil? or history.length == 0
+        'error'
+      else
+        sd['history'].last['status']
+      end
     end
 
     def scan_finished?(scan_id)
@@ -557,14 +641,14 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  pp n.host_detail(123, 1234)
     def host_detail(scan_id, host_id)
-      res = http_get(:uri=>"/scans/#{scan_id}/hosts/#{host_id}", :fields=>x_cookie)
+      res = http_get(:uri=>"/scans/#{scan_id}/hosts/#{host_id}", :fields=>header)
     end
 
     def report_download(scan_id, file_id)
-      res = http_get(:uri=>"/scans/#{scan_id}/export/#{file_id}/download", :raw_content=> true, :fields=>x_cookie)
+      res = http_get(:uri=>"/scans/#{scan_id}/export/#{file_id}/download", :raw_content=> true, :fields=>header)
     end
 
     def report_download_quick(scan_id, format) 
@@ -598,12 +682,12 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
     #  payload = {
     #    :password => password, 
     #    :json => 1
     #  }
-    #  res = n.http_put(:uri=>"/users/#{user_id}/chpasswd", :data=>payload, :fields=>n.x_cookie)
+    #  res = n.http_put(:uri=>"/users/#{user_id}/chpasswd", :data=>payload, :fields=>n.header)
     #  puts res.code 
     def http_put(opts={})
       ret=http_put_low(opts)
@@ -652,25 +736,25 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
-    #  res = n.http_delete(:uri=>"/session", :fields=>n.x_cookie)
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
+    #  res = n.http_delete(:uri=>"/session", :fields=>n.header)
     #  puts res.code
-    def http_delete(opts={})
-      ret=http_delete_low(opts)
-      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
-	authdefault
-	ret=http_delete_low(opts)
-	return ret
+    def http_delete(opts = {})
+      ret = http_delete_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
+        authdefault
+        ret = http_delete_low(opts)
+        return ret
       else
-	return ret
+        return ret
       end
     end
 
-    def http_delete_low(opts={})
-      uri    = opts[:uri]
+    def http_delete_low(opts = {})
+      uri = opts[:uri]
       fields = opts[:fields] || {}
-      res    = nil
-      tries  = @httpretry
+      res = nil
+      tries = @httpretry
 
       req = Net::HTTP::Delete.new(uri)
 
@@ -679,15 +763,15 @@ module NessusREST
       end
 
       begin
-	tries -= 1
+        tries -= 1
         res = @connection.request(req)
       rescue Timeout::Error, Errno::EINVAL, Errno::ECONNRESET, EOFError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError => e
-	if tries>0
-	  sleep @httpsleep
-	  retry
-	else
-	  return res
-	end
+        if tries > 0
+          sleep @httpsleep
+          retry
+        else
+          return res
+        end
       rescue URI::InvalidURIError
         return res
       end
@@ -701,21 +785,21 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
-    #  pp n.http_get(:uri=>"/users", :fields=>n.x_cookie)
-    def http_get(opts={})
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
+    #  pp n.http_get(:uri=>"/users", :fields=>n.header)
+    def http_get(opts = {})
       raw_content = opts[:raw_content] || false
-      ret=http_get_low(opts)
+      ret = http_get_low(opts)
       if !raw_content then
-	if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
+        if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
           authdefault
-          ret=http_get_low(opts)
+          ret = http_get_low(opts)
           return ret
         else
           return ret
-	end
+        end
       else
-	return ret
+        return ret
       end
     end
 
@@ -757,23 +841,23 @@ module NessusREST
     #
     # Usage:
     #
-    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :username=>'user', :password=> 'password')
-    #  pp n.http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>n.x_cookie)
-    def http_post(opts={})
+    #  n=NessusREST::Client.new (:url=>'https://localhost:8834', :credentials => {username: 'user', password: 'password'})
+    #  pp n.http_post(:uri=>"/scans/#{scan_id}/launch", :fields=>n.header)
+    def http_post(opts = {})
       if opts.has_key?(:authenticationmethod) then
         # i know authzmethod = opts.delete(:authorizationmethod) is short, but not readable
         authzmethod = opts[:authenticationmethod]
         opts.delete(:authenticationmethod)
       end
-      ret=http_post_low(opts)
-      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error']=='Invalid Credentials' then
-	if not authzmethod
+      ret = http_post_low(opts)
+      if ret.is_a?(Hash) and ret.has_key?('error') and ret['error'] == 'Invalid Credentials' then
+        if not authzmethod
           authdefault
-	  ret=http_post_low(opts)
-	  return ret
+          ret = http_post_low(opts)
+          return ret
         end
       else
-	return ret
+        return ret
       end
     end
 
