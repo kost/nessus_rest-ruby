@@ -452,6 +452,14 @@ module NessusREST
       return false
     end
 
+    def host_details(scan_id, host_id, history_id: nil)
+      uri = "/scans/#{scan_id}/hosts/#{host_id}"
+      unless history_id.nil?
+        uri += "?history_id=#{history_id}"
+      end
+      http_get(:uri=>uri, :fields=>header)
+    end
+
     def policy_details(policy_id)
       http_get(:uri=>"/policies/#{policy_id}", :fields=>header)
     end
