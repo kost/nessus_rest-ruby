@@ -152,7 +152,7 @@ module NessusREST
         # Starting from Nessus 7.x, Tenable protects some endpoints with a custom header
         # so that they can only be called from the user interface (supposedly).
         res = http_get({:uri=>"/nessus6.js", :raw_content=> true})
-        @api_token = res.scan(/([A-Z0-9]{8}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{12})/).first.last
+        @api_token = res.scan(/([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/).first.last
         @x_cookie = {'X-Cookie'=>@token, 'X-API-Token'=> @api_token}
         return true
       else
